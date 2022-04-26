@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{ArgEnum, Parser};
 use rusqlite::Connection;
+use std::cmp::Ordering;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -29,58 +30,66 @@ fn main() {
 
 fn parse_kobo(db_file_path: &str) -> Result<Text> {
     const SQL_QUERY: &str = r#"
-select
-  content.ISBN as ISBN,
-  content.BookTitle as bookTitle,
-  content.title as title,
-  bookmark.text as highlight,
-  bookmark.Annotation as annotation,
-  bookmark.StartOffset as startOffset,
-  bookmark.EndOffset as endOffset,
-  bookmark.StartContainerPath as startContainerPath,
-  bookmark.EndContainerPath as endContainerPath
-from bookmark
-left outer join content
-on (content.ContentID LIKE bookmark.ContentId || '%'  AND content.MimeType LIKE '%epub%')
-where text is not null
-order by bookTitle"#;
+SELECT
+  c.ISBN AS ISBN,
+  ac.Attribution AS author,
+  c.BookTitle AS bookTitle,
+  c.title AS title,
+  bookmark.text AS highlight,
+  bookmark.Annotation AS annotation,
+  bookmark.StartOffset AS startOffset,
+  bookmark.EndOffset AS endOffset,
+  bookmark.StartContainerPath AS startContainerPath,
+  bookmark.EndContainerPath AS endContainerPath
+FROM bookmark
+LEFT OUTER JOIN content c
+  ON (c.ContentID LIKE bookmark.ContentId || '%' AND c.MimeType LIKE '%epub%')
+LEFT OUTER JOIN content ac
+  ON (ac.ContentID = bookmark.VolumeID AND ac.ContentType = 6)
+WHERE text IS NOT NULL"#;
+
     let conn = Connection::open(db_file_path)?;
 
     let mut query = conn
         .prepare(SQL_QUERY)
         .context("Failed to prepare SQL query")?;
 
-    let highlights = query.query_map([], |row| {
-        Ok(KoboHighlightEntry {
-            isbn: row.get(0)?,
-            book_title: row.get(1)?,
-            title: row.get(2)?,
-            highlight: row.get(3)?,
-            annotation: row.get(4)?,
-            start_offset: row.get(5)?,
-            end_offset: row.get(6)?,
-            start_container_path: row.get(7)?,
-            end_container_path: row.get(8)?,
-        })
-    })?;
+    let mut highlights: Vec<KoboHighlightEntry> = query
+        .query_map([], |row| {
+            Ok(KoboHighlightEntry {
+                isbn: row.get(0)?,
+                author: row.get(1)?,
+                book_title: row.get(2)?,
+                title: row.get(3)?,
+                highlight: row.get(4)?,
+                annotation: row.get(5)?,
+                start_offset: row.get(6)?,
+                end_offset: row.get(7)?,
+                start_container_path: row.get(8)?,
+                end_container_path: row.get(9)?,
+            })
+        })?
+        .flatten()
+        .collect();
+
+    highlights.sort_by(|a, b| {
+        a.book_title
+            .cmp(&b.book_title)
+            .then(a.start_container_path.cmp(&b.start_container_path))
+            .then(a.start_offset.cmp(&b.start_offset))
+    });
 
     for h in highlights {
-        match h {
-            Ok(highlight) => {
-                println!("{:?}", highlight);
-            }
-            Err(e) => {
-                println!("{:?}", e);
-            }
-        }
+        println!("{:?}", h);
     }
 
     Ok(Default::default())
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KoboHighlightEntry {
     isbn: Option<String>,
+    author: Option<String>,
     book_title: Option<String>,
     title: String,
     highlight: String,

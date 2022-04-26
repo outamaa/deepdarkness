@@ -8,5 +8,6 @@ Mostly for personal use.
 
 - [x] Extract highlights from Kobo Reader
 - [ ] Extract highlights from O'Reilly Learning
+- [ ] Extract highlights from Pocket
 - [ ] Output highlights as JSON
 - [ ] Output highlights as Markdown
