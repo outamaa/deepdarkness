@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{ArgEnum, Parser};
 use rusqlite::Connection;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -79,7 +80,17 @@ WHERE text IS NOT NULL"#;
             .then(a.start_offset.cmp(&b.start_offset))
     });
 
-    for h in highlights {
+    let highlights_by_book = highlights.into_iter().fold(HashMap::new(), |mut acc, hl| {
+        acc.entry(
+            hl.book_title
+                .clone()
+                .unwrap_or_else(|| "(No title)".to_string()),
+        )
+        .or_insert(Vec::new())
+        .push(hl);
+        acc
+    });
+    for h in highlights_by_book {
         println!("{:?}", h);
     }
 
