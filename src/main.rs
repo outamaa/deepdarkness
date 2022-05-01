@@ -22,14 +22,18 @@ enum InputType {
 fn main() {
     let args = Args::parse();
 
-    let text = match args.input_type {
+    let texts = match args.input_type {
         InputType::Kobo => parse_kobo(&args.file),
         InputType::Oreilly => parse_oreilly(&args.file),
-    };
-    println!("{:?}", text);
+    }
+    .unwrap();
+
+    for text in texts {
+        println!("{}", text_to_markdown(&text));
+    }
 }
 
-fn parse_kobo(db_file_path: &str) -> Result<Text> {
+fn parse_kobo(db_file_path: &str) -> Result<Vec<Text>> {
     const SQL_QUERY: &str = r#"
 SELECT
   c.ISBN AS ISBN,
@@ -90,11 +94,19 @@ WHERE text IS NOT NULL"#;
         .push(hl);
         acc
     });
-    for h in highlights_by_book {
-        println!("{:?}", h);
-    }
 
-    Ok(Default::default())
+    let texts = highlights_by_book
+        .into_iter()
+        .map(|(book_title, highlights)| Text {
+            title: book_title,
+            author: highlights
+                .first()
+                .and_then(|hl| hl.author.clone())
+                .unwrap_or_else(|| "(Author unknown)".to_string()),
+            highlights: highlights.into_iter().map(|hl| hl.highlight).collect(),
+        });
+
+    Ok(texts.collect())
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -111,7 +123,7 @@ struct KoboHighlightEntry {
     end_container_path: String,
 }
 
-fn parse_oreilly(json_file_path: &str) -> Result<Text> {
+fn parse_oreilly(json_file_path: &str) -> Result<Vec<Text>> {
     Ok(Default::default())
 }
 
@@ -119,11 +131,25 @@ fn parse_oreilly(json_file_path: &str) -> Result<Text> {
 struct Text {
     title: String,
     author: String,
-    highlights: Vec<Highlight>,
+    highlights: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default)]
-struct Highlight {
-    text: String,
-    pos: usize,
+fn text_to_markdown(text: &Text) -> String {
+    let mut md = String::new();
+
+    md.push_str(&format!(
+        "# {}\n\nAuthor: {}\n\n",
+        &text.title, &text.author
+    ));
+
+    for hl in text.highlights.iter() {
+        md.push_str(
+            &hl.lines()
+                .map(|line| format!("> {}\n", line.trim()))
+                .collect::<String>(),
+        );
+        md.push('\n');
+    }
+
+    md
 }
